@@ -1,0 +1,226 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Google Maps Drawing</title>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <!-- CSS Customizado -->
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Bootstrap -->
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <!-- JQuery -->
+    <script src="js/jquery.min.js"></script>
+    <!-- Notify -->
+    <script rel="script" src="js/notify.min.js"></script>
+    <!-- Format Number -->
+    <script rel="script" src="js/format.min.js"></script>
+</head>
+
+<body>
+    <div class="container-fluid h-100">
+        <div class="row">
+            <div class="col">
+                <h1 class="display-4 text-center">Google Maps API - Drawing</h1>
+            </div>
+        </div>
+        <div class="row h-100">
+            <div class="col-12 col-md-9">
+                <div id="map"></div>
+            </div>
+            <div class="col-12 col-md-3 pl-2 pl-md-0 pt-2 pt-md-0">
+                <div class="card">
+                    <div class="card-header">
+                        <h4 class="font-weight-normal">Coordenadas</h4>
+                    </div>
+                    <ul class="list-group">
+                        <li class="list-group-item">
+                            <label id="lblCoordenadasPoligono" class="lead"></label>
+                        </li>
+                    </ul>
+                    <div class="card-footer">
+                        <span class="h6">Área Total (m²):
+                            <label id="lblAreaPoligono" class="lead"></label>
+                        </span>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-primary mt-2" id="btnGravar">Gravar</button>
+                <button type="button" class="btn btn-secondary mt-2" id="btnDelete">Limpar</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        var polygonShape = null;
+        var drawingManagerControl = null;
+
+        var polygonOptions = {
+            strokeColor: '#FF0000',
+            strokeOpacity: 0.8,
+            strokeWeight: 2,
+            fillColor: '#FF0000',
+            fillOpacity: 0.35,
+            editable: true,
+            draggable: true
+        };
+
+        function initMap() {
+            //Renderiza o mapa na tela
+            var map = new google.maps.Map(document.getElementById('map'), {
+                center: { lat: -28.650, lng: -51.63109 },
+                zoom: 15,
+                mapTypeId: google.maps.MapTypeId.HYBRID
+            });
+
+            //Verifica se existem coordenadas salvas no local storage
+            if (localStorage.getItem('coordenadas') != null) {
+
+                //Recupera as coordenadas e transfere para um array
+                var arrayOfCoords = localStorage.getItem('coordenadas').replace(/\n/g, '|');
+                arrayOfCoords = arrayOfCoords.split('|');
+                var arrayPoints = [];
+                var loc;
+
+                for (var i = 0; i < arrayOfCoords.length; i++) {
+                    loc = arrayOfCoords[i].split(",")
+                    arrayPoints.push(new google.maps.LatLng(parseFloat(loc[0]).toFixed(5), parseFloat(loc[1]).toFixed(5)));
+                }
+
+                //Instancia um novo polígono e atribui o array de coordenadas para ele
+                var polygon = new google.maps.Polygon({
+                    paths: arrayPoints,
+                    options: polygonOptions,
+                    map: map
+                });
+
+                polygonShape = polygon;
+
+                var drawingManager = new google.maps.drawing.DrawingManager({
+                    drawingControl: false,
+                    map: map
+                });
+
+                drawingManagerControl = drawingManager;
+
+                //Acrescenta os ouvintes de evento para atualizar as coordenadas quando o polígono for movido ou quando um novo vértice for adicionado
+                google.maps.event.addListener(polygon.getPath(), "dragend", function () { getPolygonCoords(false) });
+                google.maps.event.addListener(polygon.getPath(), 'insert_at', function () { getPolygonCoords() });
+                google.maps.event.addListener(polygon.getPath(), 'remove_at', function () { getPolygonCoords() });
+                google.maps.event.addListener(polygon.getPath(), 'set_at', function () { getPolygonCoords(false) });
+
+                //Mostra as coordenadas na tela
+                lblCoordenadasPoligono.innerText = localStorage.getItem('coordenadas');
+
+                //Mostra a área do polígono
+                lblAreaPoligono.innerText = localStorage.getItem('area');
+            }
+            else {
+                //Se não houver coordenadas salvas no local storage então cria um gerenciador de desenho no mapa
+                var drawingManager = new google.maps.drawing.DrawingManager({
+                    //Define a forma que virá selecionada no gerenciador
+                    drawingMode: google.maps.drawing.OverlayType.POLYGON,
+                    drawingControl: true,
+                    drawingControlOptions: {
+                        position: google.maps.ControlPosition.TOP_CENTER,
+                        //Define os modos de desenho disponíveis no gerenciador
+                        drawingModes: ['polygon']
+                    },
+                    polygonOptions: polygonOptions,
+                    map: map
+                });
+
+                drawingManagerControl = drawingManager;
+
+                //Evento disparado quando o polígono termina de ser desenhado
+                google.maps.event.addListener(drawingManager, 'polygoncomplete', function (polygon) {
+
+                    polygonShape = polygon;
+
+                    // Retorna ao modo de não desenho
+                    drawingManager.setDrawingMode(null);
+
+                    //Oculta o controlador de desenho para não permitir que seja desenhado mais de um polígono no mapa
+                    drawingManager.setOptions({
+                        drawingControl: false
+                    });
+
+                    //Mostra as coordenadas na tela
+                    getPolygonCoords();
+
+                    //Acrescenta os ouvintes de evento para atualizar as coordenadas quando o polígono for movido ou quando um novo vértice for adicionado
+                    google.maps.event.addListener(polygon.getPath(), "dragend", function () { getPolygonCoords(false) });
+                    google.maps.event.addListener(polygon.getPath(), "insert_at", function () { getPolygonCoords() });
+                    google.maps.event.addListener(polygon.getPath(), "remove_at", function () { getPolygonCoords() });
+                    google.maps.event.addListener(polygon.getPath(), "set_at", function () { getPolygonCoords(false) });
+                });
+            }
+
+            google.maps.event.addDomListener(document.getElementById('btnDelete'), 'click', deletePolygon);
+        };
+
+        //Função que recupera as coordenadas do polígono
+        function getPolygonCoords(calcularArea) {
+            var lengthPolygon = polygonShape.getPath().getLength();
+            var htmlStrPolygon = "";
+            document.getElementById('lblCoordenadasPoligono').innerText = "";
+            for (var i = 0; i < lengthPolygon; i++) {
+                if (htmlStrPolygon != "")
+                    htmlStrPolygon += "\n";
+                htmlStrPolygon += polygonShape.getPath().getAt(i).toUrlValue(5);
+            }
+            document.getElementById('lblCoordenadasPoligono').innerText = htmlStrPolygon;
+
+            if (calcularArea == undefined)
+                calcularArea = true;
+
+            if (calcularArea == true)
+                getArea();
+        };
+
+        //Função que calcula a área do polígono
+        function getArea() {
+            document.getElementById('lblAreaPoligono').innerText = "";
+            document.getElementById('lblAreaPoligono').innerText = format("###.##0,00", google.maps.geometry.spherical.computeArea(polygonShape.getPath()));
+        }
+
+        //Função que remove o polígono do mapa
+        function deletePolygon() {
+            if (polygonShape != undefined) {
+                polygonShape.setMap(null);
+                document.getElementById('lblCoordenadasPoligono').innerText = "";
+                document.getElementById('lblAreaPoligono').innerText = "";
+                if (localStorage.getItem('coordenadas') != null) {
+                    window.localStorage.clear();
+                }
+
+                if (drawingManagerControl.drawingMode == null)
+                    initMap();
+            }
+        }
+
+        document.getElementById("btnGravar").onclick = function () { gravarPolygon() };
+
+        //Função que grava as coordenadas e a área do polígono no local storage
+        function gravarPolygon() {
+            if (lblCoordenadasPoligono.innerText != "") {
+                window.localStorage.setItem('coordenadas', lblCoordenadasPoligono.innerText);
+                window.localStorage.setItem('area', lblAreaPoligono.innerText);
+                $.notify("Forma gravada com sucesso!",
+                    {
+                        className: "success",
+                        autoHideDelay: 2000
+                    });
+            }
+            else {
+                $.notify("Nenhuma forma desenhada para gravar!", {
+                    className: "error",
+                    autoHideDelay: 2000,
+                });
+            }
+        }
+    </script>
+    <script
+        src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=drawing&callback=initMap"
+        async defer></script>
+</body>
+
+</html>
